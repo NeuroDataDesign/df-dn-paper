@@ -13,6 +13,7 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from sklearn.model_selection import ParameterSampler
 from scipy.stats.distributions import expon
+import json
 
 def run_naive_rf():
     naive_rf_kappa = []
@@ -50,37 +51,24 @@ def run_cnn32():
     cnn32_ece = []
     cnn32_train_time = []
     cnn32_test_time = []
-    for classes in classes_space:
-
+    rng = np.random.RandomState(0)
+    param_grid = {'lr':[0.0001,0.001,0.0125,0.025],
+            'mo': [0.01,0.05,0.1,0.2,],
+            'bs': [32,64,128,256],
+            'wd': [0.00005,0.0001,0.0005,0.001,0.005]
+            }
+    param_list = list(ParameterSampler(param_grid, n_iter=20,
+        random_state=rng))
+    rounded_list = [dict((k, round(v, 6)) for (k, v) in d.items())                                                                for d in param_list]
+    outputlist=[]
+    total_train_time=0
+    for samples in samples_space:
+        totalaccuracy=[]
         # cohen_kappa vs num training samples (cnn32)
-        for samples in samples_space:
+        for i in range(len(rounded_list)):
+            average_accuracy=0
+            for classes in classes_space:
             # train data
-            cifar_trainset = datasets.CIFAR10(
-                root="./", train=True, download=True, transform=data_transforms
-            )
-            cifar_train_labels = np.array(cifar_trainset.targets)
-
-            # test data
-            cifar_testset = datasets.CIFAR10(
-                root="./", train=False, download=True, transform=data_transforms
-            )
-            cifar_test_labels = np.array(cifar_testset.targets)
-            print(classes)
-            print(samples)
-            rng = np.random.RandomState(0)
-            param_grid = {'lr':[0.0001,0.001,0.0125,0.025],
-             'mo': [0.01,0.05,0.1,0.2,],
-             'bs': [32,64,128,256],
-             'wd': [0.00005,0.0001,0.0005,0.001,0.005]
-             }
-            param_list = list(ParameterSampler(param_grid, n_iter=5,
-                random_state=rng))
-            rounded_list = [dict((k, round(v, 6)) for (k, v) in d.items())
-                    for d in param_list]
-            total_train_time=0
-            maxaccuracy=0
-            for i in range(len(rounded_list)):
-                cnn32 = SimpleCNN32Filter(len(classes))
                 cifar_trainset = datasets.CIFAR10(
                     root="./", train=True, download=True, transform=data_transforms
                     )
@@ -91,8 +79,10 @@ def run_cnn32():
                     root="./", train=False, download=True, transform=data_transforms
                     )
                 cifar_test_labels = np.array(cifar_testset.targets)
+                cnn32 = SimpleCNN32Filter(len(classes))
+                total_train_time=0
+                maxaccuracy=0
                 param=rounded_list[i]
-                print(param)
                 lr=param['lr']
                 momentum=param['mo']
                 wd=param['wd']
@@ -116,59 +106,24 @@ def run_cnn32():
                     wd,
                     )
                 total_train_time+=train_time
-                if(accuracy>maxaccuracy):
-                    bestparam=param
-                    maxaccuracy=accuracy
-            print('best parameter')
-            print(bestparam)
-            print('best accuracy')
-            print(maxaccuracy)
-            lr=bestparam['lr']
-            momentum=bestparam['mo']
-            wd=bestparam['wd']
-            batch=bestparam['bs']
-            print(lr)
-            print(momentum)
-            print(wd)
-            print(batch)            
-            cifar_trainset = datasets.CIFAR10(
-                root="./", train=True, download=True, transform=data_transforms
-                )
-            cifar_train_labels = np.array(cifar_trainset.targets)
-
-            # test data
-            cifar_testset = datasets.CIFAR10(
-                root="./", train=False, download=True, transform=data_transforms
-                )
-            cifar_test_labels = np.array(cifar_testset.targets)
-            cnn32 = SimpleCNN32Filter(len(classes))
-            train_loader, valid_loader, test_loader = create_loaders_es(
-                cifar_train_labels,
-                cifar_test_labels,
-                classes,
-                cifar_trainset,
-                cifar_testset,
-                samples,
-                batch,
-                )
-            cohen_kappa, ece, train_time, test_time,accuracy = test_dn_image_es_multiple(
-                cnn32,
-                train_loader,
-                valid_loader,
-                test_loader,
-                lr,
-                momentum,
-                wd,
-                )
-            cnn32_kappa.append(cohen_kappa)
-            cnn32_ece.append(ece)
-            cnn32_train_time.append(total_train_time)
-            cnn32_test_time.append(test_time)
-            print(cohen_kappa)
-            print(ece)
-            print(train_time)
-            print(test_time)
-            print(accuracy)
+                average_accuracy+=accuracy
+            average_accuracy=average_accuracy/len(classes_space)
+            totalaccuracy.append(average_accuracy)
+        yy=np.asarray(totalaccuracy)
+        z=np.argmax(yy)
+        classifier='CNN32'
+        num_classes=int(n_classes)
+        sample_size=int(samples)
+        outputdic=rounded_list[z].copy()
+        outputdic['classifier']=classifier
+        outputdic['number of classes']=num_classes
+        outputdic['sample size']=sample_size
+        outputlist.append(outputdic)
+        outputdic={}
+    with open("parameters.json", "w") as outfile:
+        for j in range(len(outputlist)):
+            json.dump(outputlist[j], outfile)
+            outfile.write("\n")
 
     print("cnn32 finished")
     write_result(prefix + "cnn32_kappa.txt", cnn32_kappa)

@@ -638,7 +638,6 @@ def test_dn_image_es_multiple(
         if (test_preds[i]==test_labels[i]):
             count+=1
     accuracy=count/len(test_preds)
-    print(accuracy)
     return (
         cohen_kappa_score(test_preds, test_labels),
         get_ece(test_probs, test_preds, test_labels),
